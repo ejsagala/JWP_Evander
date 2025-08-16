@@ -1,149 +1,171 @@
 <?php
 session_start();
 
-/**
- * Inisialisasi daftar tugas
- */
+/* =========================================
+   Inisialisasi & Normalisasi Data Session
+   ========================================= */
 if (!isset($_SESSION['tasks'])) {
-    $_SESSION['tasks'] = [
-        ['nama' => 'Belajar PHP dasar', 'selesai' => false],
-        ['nama' => 'Mengerjakan skripsi', 'selesai' => false],
-        ['nama' => 'Olahraga sore', 'selesai' => false],
-        ['nama' => 'Baca buku teknologi', 'selesai' => false]
-    ];
+    $_SESSION['tasks'] = [];
 }
 
-$aksi = null; // untuk catat aksi terakhir
-
-// --- Fungsi ---
-function tambahTugas($nama) {
-    global $aksi;
-    if (!empty($nama)) {
-        $_SESSION['tasks'][] = ['nama' => $nama, 'selesai' => false];
-        $aksi = "Tambah tugas: $nama";
-    }
-}
-
-function toggleTugas($index) {
-    global $aksi;
-    if (isset($_SESSION['tasks'][$index])) {
-        $_SESSION['tasks'][$index]['selesai'] = !$_SESSION['tasks'][$index]['selesai'];
-        $status = $_SESSION['tasks'][$index]['selesai'] ? "Selesai" : "Belum selesai";
-        $aksi = "Ubah status tugas: " . $_SESSION['tasks'][$index]['nama'] . " → $status";
-    }
-}
-
-function hapusTugas($index) {
-    global $aksi;
-    if (isset($_SESSION['tasks'][$index])) {
-        $aksi = "Hapus tugas: " . $_SESSION['tasks'][$index]['nama'];
-        array_splice($_SESSION['tasks'], $index, 1);
-    }
-}
-
-function editTugas($index, $nama) {
-    global $aksi;
-    if (isset($_SESSION['tasks'][$index]) && !empty($nama)) {
-        $aksi = "Edit tugas: " . $_SESSION['tasks'][$index]['nama'] . " → $nama";
-        $_SESSION['tasks'][$index]['nama'] = $nama;
-    }
-}
-
-// --- Aksi Form ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['tugas'])) {
-        tambahTugas($_POST['tugas']);
-    } elseif (isset($_POST['toggle'])) {
-        toggleTugas($_POST['toggle']);
-    } elseif (isset($_POST['hapus'])) {
-        hapusTugas($_POST['hapus']);
-    } elseif (isset($_POST['edit_index']) && isset($_POST['edit_nama'])) {
-        editTugas($_POST['edit_index'], $_POST['edit_nama']);
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "?aksi=" . urlencode($aksi));
-    exit;
-}
-
-// --- Render daftar tugas ---
-function tampilkanDaftar($tasks) {
-    foreach ($tasks as $i => $task) {
-        $checked = $task['selesai'] ? 'checked' : '';
-        $class = $task['selesai'] ? 'text-decoration-line-through text-muted' : '';
-
-        echo '<li class="list-group-item d-flex justify-content-between align-items-center">';
-        echo '<div class="d-flex align-items-center">';
-
-        // Checkbox toggle
-        echo '<form method="post" class="me-2">';
-        echo '<input type="hidden" name="toggle" value="' . $i . '">';
-        echo '<input type="checkbox" class="form-check-input" onchange="this.form.submit()" ' . $checked . '>';
-        echo '</form>';
-
-        // Nama tugas (atau form edit jika sedang edit)
-        if (isset($_GET['edit']) && $_GET['edit'] == $i) {
-            echo '<form method="post" class="d-flex">';
-            echo '<input type="hidden" name="edit_index" value="' . $i . '">';
-            echo '<input type="text" name="edit_nama" value="' . htmlspecialchars($task['nama']) . '" class="form-control me-2" required>';
-            echo '<button type="submit" class="btn btn-primary btn-sm">Simpan</button>';
-            echo '</form>';
-        } else {
-            echo '<span class="' . $class . '">' . htmlspecialchars($task['nama']) . '</span>';
+/**
+ * Pastikan setiap task punya key 'name' dan 'status'.
+ * Juga migrasi dari data lama yang mungkin pakai 'nama'.
+ */
+function normalizeTasks(): void {
+    foreach ($_SESSION['tasks'] as $k => $t) {
+        // migrasi key 'nama' -> 'name'
+        if (!isset($t['name']) && isset($t['nama'])) {
+            $t['name'] = $t['nama'];
+            unset($t['nama']);
         }
-
-        echo '</div>';
-
-        // Tombol Edit & Hapus
-        if (!(isset($_GET['edit']) && $_GET['edit'] == $i)) {
-            echo '<div>';
-            echo '<a href="?edit=' . $i . '" class="btn btn-sm btn-warning me-2">Edit</a>';
-            echo '<form method="post" style="display:inline">';
-            echo '<input type="hidden" name="hapus" value="' . $i . '">';
-            echo '<button type="submit" class="btn btn-sm btn-danger">Hapus</button>';
-            echo '</form>';
-            echo '</div>';
+        // default status = false
+        if (!isset($t['status'])) {
+            $t['status'] = false;
         }
-
-        echo '</li>';
+        // pastikan 'name' ada
+        if (!isset($t['name'])) {
+            $t['name'] = '';
+        }
+        $_SESSION['tasks'][$k] = $t;
     }
 }
+normalizeTasks();
+
+/* ======================
+   Handlers (POST only)
+   ====================== */
+
+// Tambah todo
+if (isset($_POST['task_add'])) {
+    $task = trim($_POST['task_add']);
+    if ($task !== '') {
+        $_SESSION['tasks'][] = ['name' => $task, 'status' => false];
+    }
+    header('Location: index.php'); exit;
+}
+
+// Toggle status
+if (isset($_POST['toggle_status'])) {
+    $i = (int) $_POST['toggle_status'];
+    if (isset($_SESSION['tasks'][$i])) {
+        $_SESSION['tasks'][$i]['status'] = !$_SESSION['tasks'][$i]['status'];
+    }
+    header('Location: index.php'); exit;
+}
+
+// Edit todo
+if (isset($_POST['edit_task'], $_POST['edit_index'])) {
+    $i = (int) $_POST['edit_index'];
+    $new = trim($_POST['edit_task']);
+    if ($new !== '' && isset($_SESSION['tasks'][$i])) {
+        $_SESSION['tasks'][$i]['name'] = $new;
+    }
+    header('Location: index.php'); exit;
+}
+
+// Hapus todo
+if (isset($_POST['delete'])) {
+    $i = (int) $_POST['delete'];
+    if (isset($_SESSION['tasks'][$i])) {
+        unset($_SESSION['tasks'][$i]);
+        $_SESSION['tasks'] = array_values($_SESSION['tasks']); // reindex
+    }
+    header('Location: index.php'); exit;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <title>Aplikasi To-Do List</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-<div class="container py-5">
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <h1 class="card-title text-center mb-4">📋 Aplikasi To-Do List</h1>
+<div class="container mt-5">
+    <div class="card shadow p-4">
+        <h2 class="text-center mb-4">📝To-Do List</h2>
 
-            <!-- Form Tambah Tugas -->
-            <form method="post" class="input-group mb-3">
-                <input type="text" name="tugas" class="form-control" placeholder="Tambah tugas baru..." required>
-                <button class="btn btn-success" type="submit">Tambah</button>
-            </form>
+        <!-- Form Tambah -->
+        <form method="post" class="d-flex mb-3">
+            <input type="text" name="task_add" class="form-control me-2" placeholder="Masukkan tugas baru..." required>
+            <button type="submit" class="btn btn-primary">Tambah</button>
+        </form>
 
-            <!-- Daftar Tugas -->
-            <ul class="list-group">
-                <?php tampilkanDaftar($_SESSION['tasks']); ?>
-            </ul>
-        </div>
+        <!-- Daftar Todo -->
+        <ul class="list-group">
+            <?php foreach ($_SESSION['tasks'] as $index => $task): 
+                // aman dari data lama
+                $name   = htmlspecialchars($task['name'] ?? '', ENT_QUOTES, 'UTF-8');
+                $done   = !empty($task['status']);
+                $checked= $done ? 'checked' : '';
+                $badge  = $done
+                    ? '<span class="badge bg-success ms-2">✔ Sudah Selesai</span>'
+                    : '<span class="badge bg-warning text-dark ms-2">⌛ Belum Selesai</span>';
+            ?>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <form method="post" class="d-flex align-items-center w-100">
+                        <!-- Checkbox Status -->
+                        <input type="checkbox"
+                               name="toggle_status"
+                               value="<?= $index ?>"
+                               class="form-check-input me-2"
+                               onchange="this.form.submit()" <?= $checked ?>>
+
+                        <!-- Teks todo -->
+                        <span class="task-text flex-grow-1 <?= $done ? 'text-decoration-line-through text-muted' : '' ?>"
+                              id="task-text-<?= $index ?>">
+                            <?= $name ?>
+                        </span>
+
+                        <!-- Input edit (hidden + disabled saat tidak edit) -->
+                        <input type="text"
+                               name="edit_task"
+                               value="<?= $name ?>"
+                               class="form-control d-none flex-grow-1"
+                               id="task-input-<?= $index ?>"
+                               disabled
+                               onblur="this.form.submit()"
+                               onkeydown="if(event.key==='Enter'){this.form.submit();}">
+                        <input type="hidden" name="edit_index" value="<?= $index ?>">
+
+                        <!-- Status badge -->
+                        <?= $badge ?>
+
+                        <!-- Tombol Edit -->
+                        <button type="button"
+                                class="btn btn-warning btn-sm ms-2"
+                                onclick="enableEdit(<?= $index ?>)">
+                            Edit
+                        </button>
+
+                        <!-- Tombol Hapus -->
+                        <button type="submit"
+                                name="delete"
+                                value="<?= $index ?>"
+                                class="btn btn-danger btn-sm ms-2">
+                            Hapus
+                        </button>
+                    </form>
+                </li>
+            <?php endforeach; ?>
+        </ul>
     </div>
 </div>
 
-<!-- Script Debug Console -->
+<!-- Script Edit Inline -->
 <script>
-    // Ambil data tasks dari PHP
-    let tasks = <?php echo json_encode($_SESSION['tasks']); ?>;
-    console.log("📋 Daftar tugas saat ini:", tasks);
+function enableEdit(index) {
+    const textEl  = document.getElementById('task-text-' + index);
+    const inputEl = document.getElementById('task-input-' + index);
 
-    // Ambil aksi terakhir dari parameter GET (kalau ada)
-    <?php if (isset($_GET['aksi'])): ?>
-        console.log("✅ Aksi terakhir:", "<?php echo $_GET['aksi']; ?>");
-    <?php endif; ?>
+    textEl.classList.add('d-none');          // sembunyikan teks
+    inputEl.classList.remove('d-none');      // tampilkan input
+    inputEl.disabled = false;                // aktifkan input
+    inputEl.focus();                         // fokus & select
+    inputEl.select();
+}
 </script>
 </body>
 </html>
